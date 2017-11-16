@@ -6,7 +6,7 @@
 
 import tensorflow as tf
 import numpy as np
-from Data_Generator import Data
+from .Data_Generator import Data
 import cv2
 import os
 
@@ -129,10 +129,12 @@ with g.as_default():
     with tf.variable_scope('LOSS'):
         with tf.variable_scope('LOSS1'):
             loss1_map = deconv3D(main_stream[5], 'loss1', [3, 3, 3, 2, 128], [1, 2, 2, 2, 1])
+            loss1_map = tf.nn.softmax(loss1_map)  # 对中间层softmax输出监督
 
         with tf.variable_scope('LOSS2'):
             loss2_map = deconv3D(main_stream[8], 'loss2_1', [3, 3, 3, 128, 256], [1, 2, 2, 2, 1])
             loss2_map = deconv3D(loss2_map, 'loss2_2', [3, 3, 3, 2, 128], [1, 2, 2, 2, 1])
+            loss2_map = tf.nn.softmax(loss2_map)
 
         flat_logits = tf.reshape(out, [-1, CLASSES])
         flat_loss1 = tf.reshape(loss1_map, [-1, CLASSES])

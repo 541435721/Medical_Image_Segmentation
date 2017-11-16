@@ -6,12 +6,21 @@
 
 import tensorflow as tf
 from MyNetLib.NN import conv3D, deconv3D, denseLayer3D
+from MyNetLib.Data_Generator import Data
 import numpy as np
+import os
+import cv2
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 K = 12
 MAX_ITER = 15000
 Learning_Rate = 0.05
 CLASSES = 2
+path = '/home/bxsh/airway_data'
+BLOCK_SIZE = [32, 64, 64]
+stride = [30, 50, 50]
 
 main_stream = []
 dense_block1_layers = []
@@ -190,12 +199,61 @@ with g.as_default():
     train = tf.train.MomentumOptimizer(
         learning_rate=rate[0], momentum=0.9).minimize(loss=loss, global_step=g_steps)
 
+    tf.summary.scalar('loss', loss)
+    tf.summary.scalar('acc', acc)
+    merged = tf.summary.merge_all()
+
+data = Data(path, BLOCK_SIZE, stride)
 if __name__ == '__main__':
     with tf.Session(graph=g) as sess:
         x = np.zeros([1, 32, 32, 32, 1])
+        saver = tf.train.Saver()
         tf.global_variables_initializer().run()
         summary_writer = tf.summary.FileWriter('./summary', sess.graph)
-        for i in main_stream:
-            ans = sess.run(tf.shape(i), feed_dict={X: x})
-            print(i.name, ans)
-        pass
+        iteration = 0
+        count = 0
+        while iteration < MAX_ITER:
+            try:
+                try:
+                    x, y = data.next()
+                except Exception as e:
+                    data = Data(path, BLOCK_SIZE, stride)
+                    x, y = data.next()
+
+                flat = y.flatten().tolist()
+
+                portion = sum(flat) * 1.0 / (len(flat) - sum(flat))
+
+                if portion < 0.2:
+                    continue
+                iteration += 1
+                Learning_Rate *= (1.0 - iteration * 1.0 / MAX_ITER) ** 0.9
+                w = [portion, 1, 0.8 * (0.99 ** (iteration // 200)),  # [portion,1]
+                     1.0 * (0.99 ** (iteration // 200))]
+
+                ans1, ans2, ans3 = sess.run(
+                    [loss, acc, merged], feed_dict={X: x, Y: y, W: w, rate: Learning_Rate})
+                sess.run(train, feed_dict={X: x, Y: y, W: w})
+                if iteration % 100 == 0:
+                    count += 1
+                    summary_writer.add_summary(ans3, count)
+
+                print(
+                    "Iteration:{0},loss:{1},acc:{2},rates:{3},weight:{4}".format(str(iteration),
+                                                                                 ans1,
+                                                                                 ans2, Learning_Rate, w))
+                pic = sess.run(pre, feed_dict={X: x, Y: y, W: w})
+                cv2.imwrite(
+                    './prediction/pre_' + str(iteration) + '.jpg',
+                    np.uint8(pic[0, 0, ...]) * 255)
+            except Exception as e:
+                print("出现异常，保存模型")
+                saver.save(sess, './test_model_save/test' + str(iteration) + '.ckpt')
+
+            if iteration % 1000 == 0:
+                saver.save(sess, './test_model_save/test' + str(iteration) + '.ckpt')
+
+            if Learning_Rate - 0 < 0.00001:
+                break
+
+        saver.save(sess, './test_model_save/test.ckpt')
