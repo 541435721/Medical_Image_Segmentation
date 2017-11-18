@@ -93,7 +93,7 @@ with g.as_default():
         X = tf.placeholder(tf.float32, [None, None, None, None, 1])
         Y = tf.placeholder(tf.int64, [None, None, None, None])
         W = tf.placeholder(dtype=tf.float32, shape=[4])
-        rate = tf.placeholder(dtype=tf.float32, shape=[1])
+        # rate = tf.placeholder(dtype=tf.float32, shape=[1])
     main_stream.append(X)
     for block in DVN_arch[0]:
         with tf.variable_scope(block[0]):
@@ -161,6 +161,7 @@ with g.as_default():
             out = conv3D(out, 'DS', [1, 1, 1, 64, 2], [1, 1, 1, 1, 1], "SAME", None, True, True, 0.003)
         with tf.variable_scope('softmax'):
             inter_out = tf.nn.softmax(out)
+            pre_inter = tf.argmax(inter_out, axis=-1)
 
     with tf.variable_scope('out'):
         with tf.variable_scope('conv'):
@@ -197,7 +198,7 @@ with g.as_default():
     g_steps = tf.Variable(0)
 
     train = tf.train.MomentumOptimizer(
-        learning_rate=rate[0], momentum=0.9).minimize(loss=loss, global_step=g_steps)
+        learning_rate=W[3], momentum=0.9).minimize(loss=loss, global_step=g_steps)
 
     tf.summary.scalar('loss', loss)
     tf.summary.scalar('acc', acc)
@@ -209,7 +210,7 @@ if __name__ == '__main__':
         x = np.zeros([1, 32, 32, 32, 1])
         saver = tf.train.Saver()
         tf.global_variables_initializer().run()
-        summary_writer = tf.summary.FileWriter('./summary', sess.graph)
+        summary_writer = tf.summary.FileWriter('./summary_DVN', sess.graph)
         iteration = 0
         count = 0
         while iteration < MAX_ITER:
@@ -224,15 +225,15 @@ if __name__ == '__main__':
 
                 portion = sum(flat) * 1.0 / (len(flat) - sum(flat))
 
-                if portion < 0.2:
+                if portion < 0.1:
                     continue
                 iteration += 1
                 Learning_Rate *= (1.0 - iteration * 1.0 / MAX_ITER) ** 0.9
-                w = [portion, 1, 0.8 * (0.99 ** (iteration // 200)),  # [portion,1]
-                     1.0 * (0.99 ** (iteration // 200))]
-
+                w = [portion, 1, 1.0 * (0.99 ** (iteration // 200)),  # [portion,1]
+                     Learning_Rate]
+                x = 1 - x / 255.0 # 对原始图像取反
                 ans1, ans2, ans3 = sess.run(
-                    [loss, acc, merged], feed_dict={X: x, Y: y, W: w, rate: Learning_Rate})
+                    [loss, acc, merged], feed_dict={X: x, Y: y, W: w})
                 sess.run(train, feed_dict={X: x, Y: y, W: w})
                 if iteration % 100 == 0:
                     count += 1
@@ -242,18 +243,28 @@ if __name__ == '__main__':
                     "Iteration:{0},loss:{1},acc:{2},rates:{3},weight:{4}".format(str(iteration),
                                                                                  ans1,
                                                                                  ans2, Learning_Rate, w))
-                pic = sess.run(pre, feed_dict={X: x, Y: y, W: w})
+                pic1, pic2 = sess.run([pre, pre_inter], feed_dict={X: x, Y: y, W: w})
                 cv2.imwrite(
-                    './prediction/pre_' + str(iteration) + '.jpg',
-                    np.uint8(pic[0, 0, ...]) * 255)
+                    './prediction_DVN/' + str(iteration) + '_raw.jpg',
+                    np.uint8(pic1[0, 0, ..., 0] * 255))
+                cv2.imwrite(
+                    './prediction_DVN/' + str(iteration) + '_pre.jpg',
+                    np.uint8(pic1[0, 0, ...]) * 255)
+                cv2.imwrite(
+                    './prediction_DVN/' + str(iteration) + '_pre_inter.jpg',
+                    np.uint8(pic2[0, 0, ...]) * 255)
+                cv2.imwrite(
+                    './prediction_DVN/' + str(iteration) + '_label.jpg',
+                    np.uint8(y[0, 0, ...]) * 255)
             except Exception as e:
                 print("出现异常，保存模型")
-                saver.save(sess, './test_model_save/test' + str(iteration) + '.ckpt')
+                print(e)
+                saver.save(sess, './test_model_save_DVN/test' + str(iteration) + '.ckpt')
 
             if iteration % 1000 == 0:
-                saver.save(sess, './test_model_save/test' + str(iteration) + '.ckpt')
+                saver.save(sess, './test_model_save_DVN/test' + str(iteration) + '.ckpt')
 
             if Learning_Rate - 0 < 0.00001:
                 break
 
-        saver.save(sess, './test_model_save/test.ckpt')
+        saver.save(sess, './test_model_save_DVN/test.ckpt')
