@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # @Author: bxsh
 # @Email:  xbc0809@gmail.com
-# @File:  U-Net-m-retrain.py
-# @Date:  2017/11/17 14:09
+# @File:  U-Net-m-retrain2.py
+# @Date:  2017/11/17 15:19
 
 
 import tensorflow as tf
@@ -47,8 +47,8 @@ g = tf.Graph()
 path = '/home/bxsh/airway_data'
 channels = [32, 64, 128, 256, 512]
 CLASSES = 2
-BLOCK_SIZE = [32, 64, 64]
-stride = [30, 50, 50]
+BLOCK_SIZE = [64, 64, 64]  # 修改了batch_size
+stride = [50, 50, 50]
 
 down_architecture = [
     ['block1', [  # 16
@@ -178,16 +178,16 @@ data = Data(path, BLOCK_SIZE, stride)
 if __name__ == '__main__':
     with tf.Session(graph=g) as sess:
         saver = tf.train.Saver()
-        saver.restore(sess, './test_model_save_modified/test.ckpt')
+        saver.restore(sess, './test_model_save_modified_retrain/test.ckpt')
         # tf.global_variables_initializer().run()
         key = 0.0045  # 0.005
         sess.run(tf.assign(g_steps, 0))
-        summary_writer = tf.summary.FileWriter('./summary_modified_retrain', graph=sess.graph)
+        summary_writer = tf.summary.FileWriter('./summary_modified_retrain2', graph=sess.graph)
         w = [0.1, 0.2, 0.3, 0.4]
         ans3 = 1000
         count = 0
         iteration = 0
-        while iteration < 5000:
+        while iteration < 15000:
             try:
                 try:
                     x, y = data.next()
@@ -202,8 +202,8 @@ if __name__ == '__main__':
                 if portion < 0.01:
                     continue
                 iteration += 1
-                w = [1, 1, 0.3 * (0.99 ** (iteration // 200)),  # [portion,1]
-                     0.4 * (0.99 ** (iteration // 200))]
+                w = [1, 1, 0.03 * (0.8 ** (iteration // 200)),  # [portion,1]
+                     0.04 * (0.8 ** (iteration // 200))]
 
                 ans1, ans2, ans3, ans4 = sess.run(
                     [loss, acc, rates, merged], feed_dict={X: x, Y: y, W: w})
@@ -218,16 +218,16 @@ if __name__ == '__main__':
                                                                                  ans2, ans3, w))
                 pic = sess.run(pre, feed_dict={X: x, Y: y, W: w})
                 cv2.imwrite(
-                    './prediction_modified_retrain/pre_' + str(iteration) + '.jpg',
+                    './prediction_modified_retrain2/pre_' + str(iteration) + '.jpg',
                     np.uint8(pic[0, 0, ...]) * 255)
             except Exception as e:
                 print("出现异常，保存模型")
-                saver.save(sess, './test_model_save_modified_retrain/test' + str(iteration) + '.ckpt')
+                saver.save(sess, './test_model_save_modified_retrain2/test' + str(iteration) + '.ckpt')
 
             if iteration % 1000 == 0:
-                saver.save(sess, './test_model_save_modified_retrain/test' + str(iteration) + '.ckpt')
+                saver.save(sess, './test_model_save_modified_retrain2/test' + str(iteration) + '.ckpt')
 
             if ans3 - 0 < 0.00001:
                 break
 
-        saver.save(sess, './test_model_save_modified_retrain/test.ckpt')
+        saver.save(sess, './test_model_save_modified_retrain2/test.ckpt')
